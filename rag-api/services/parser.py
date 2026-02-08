@@ -1,4 +1,5 @@
 import io
+from datetime import date
 
 import pandas as pd
 from pydantic import ValidationError
@@ -47,6 +48,10 @@ def parse_file(content: bytes, filename: str) -> tuple[list[EstimateRecord], lis
                 raw["quantity"] = int(raw["quantity"])
             if raw.get("unit_price") is not None:
                 raw["unit_price"] = int(raw["unit_price"])
+            if raw.get("estimate_date") is not None:
+                val = raw["estimate_date"]
+                if not isinstance(val, date):
+                    raw["estimate_date"] = pd.to_datetime(str(val)).date()
 
             record = EstimateRecord(**raw)
             records.append(record)

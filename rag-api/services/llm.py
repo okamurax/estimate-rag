@@ -1,12 +1,10 @@
 import asyncio
 from pathlib import Path
 
-from google import genai
 from google.genai.types import GenerateContentConfig
 
 import config
-
-_client = genai.Client(api_key=config.GEMINI_API_KEY)
+from services.gemini_client import client as _client
 _system_prompt = (Path(__file__).parent.parent / "prompts" / "system.txt").read_text(
     encoding="utf-8"
 )

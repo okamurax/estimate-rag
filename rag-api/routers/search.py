@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, UploadFile, File
 
 from services import rag, qdrant, parser
@@ -6,16 +8,16 @@ router = APIRouter(prefix="/api/v1/data")
 
 
 @router.get("/search")
-async def search(q: str, limit: int = 5):
+async def search(q: str, material: Optional[str] = None, limit: int = 5):
     """デバッグ・管理用の直接検索API。"""
-    result = await rag.search(q, limit=limit)
-    return result
+    result = await rag.search(q, limit=limit, material_filter=material)
+    return {"results": result["results"]}
 
 
 @router.get("/count")
 async def count():
     """登録データ件数を取得。"""
-    return {"count": qdrant.count()}
+    return {"count": await qdrant.count()}
 
 
 @router.post("/import")

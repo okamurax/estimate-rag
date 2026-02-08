@@ -1,13 +1,11 @@
 import asyncio
 import json
 
-from google import genai
 from google.genai.types import GenerateContentConfig
 from qdrant_client.models import FieldCondition, Filter, MatchValue, Range
 
 import config
-
-_client = genai.Client(api_key=config.GEMINI_API_KEY)
+from services.gemini_client import client as _client
 
 _EXTRACTION_PROMPT = """\
 ユーザーの問い合わせから、以下の検索条件を抽出してJSON形式で返してください。

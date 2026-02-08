@@ -1,12 +1,7 @@
 import asyncio
-import time
-
-from google import genai
 
 import config
-
-
-_client = genai.Client(api_key=config.GEMINI_API_KEY)
+from services.gemini_client import client as _client
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:

@@ -1,11 +1,17 @@
+import logging
+
 import httpx
 
 import config
 
+logger = logging.getLogger(__name__)
+
+_TIMEOUT = httpx.Timeout(30.0)
+
 
 async def download_file(file_id: str) -> tuple[bytes, str]:
     """Mattermost APIからファイルをダウンロードする。(content, filename)を返す。"""
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         # ファイル情報を取得
         info_resp = await client.get(
             f"{config.MATTERMOST_API_URL}/files/{file_id}/info",
@@ -25,8 +31,9 @@ async def download_file(file_id: str) -> tuple[bytes, str]:
 
 async def post_message(channel_id: str, text: str) -> None:
     """Incoming Webhookでメッセージを投稿する。"""
-    async with httpx.AsyncClient() as client:
-        await client.post(
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(
             config.MATTERMOST_INCOMING_WEBHOOK_URL,
             json={"channel_id": channel_id, "text": text},
         )
+        resp.raise_for_status()

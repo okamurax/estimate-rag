@@ -1,18 +1,35 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
+import config
 from services import rag, qdrant, mattermost, parser
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
+
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _track_task(coro) -> None:
+    """バックグラウンドタスクを作成し、参照を保持する。"""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 @router.post("/webhook/mattermost")
 async def mattermost_webhook(request: Request):
     """Mattermost Outgoing Webhookからのリクエストを処理する。"""
     body = await request.json()
+
+    # トークン検証
+    token = body.get("token", "")
+    if config.MATTERMOST_OUTGOING_WEBHOOK_TOKEN and token != config.MATTERMOST_OUTGOING_WEBHOOK_TOKEN:
+        logger.warning("Invalid webhook token received")
+        raise HTTPException(status_code=403, detail="Invalid token")
+
     text = body.get("text", "")
     channel_id = body.get("channel_id", "")
     file_ids = body.get("file_ids") or []
@@ -24,15 +41,15 @@ async def mattermost_webhook(request: Request):
 
     # コマンド判定
     if "インポート" in query and file_ids:
-        asyncio.create_task(_handle_import(channel_id, file_ids))
+        _track_task(_handle_import(channel_id, file_ids))
         return {"text": "📥 取り込み中..."}
 
     if "件数" in query:
-        total = qdrant.count()
+        total = await qdrant.count()
         return {"text": f"📊 現在の登録データ件数: {total:,}件"}
 
     # RAG検索
-    asyncio.create_task(_handle_search(channel_id, query))
+    _track_task(_handle_search(channel_id, query))
     return {"text": "🔍 検索中..."}
 
 
@@ -69,7 +86,7 @@ async def _handle_import(channel_id: str, file_ids: list[str]) -> None:
                 all_updated += result.updated_count
                 all_errors.extend(result.errors)
 
-        total = qdrant.count()
+        total = await qdrant.count()
         logger.info("Import complete: new=%d, updated=%d, errors=%d", all_new, all_updated, len(all_errors))
         answer = _format_import_response(all_new, all_updated, all_errors, total)
     except Exception as e:

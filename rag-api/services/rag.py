@@ -1,5 +1,7 @@
 import logging
 
+from qdrant_client.models import FieldCondition, Filter, MatchValue
+
 from models.estimate import EstimateRecord, ImportResult
 from services import embedding, llm, qdrant
 from services.filter import extract_filters
@@ -7,17 +9,27 @@ from services.filter import extract_filters
 logger = logging.getLogger(__name__)
 
 
-async def search(query: str, limit: int = 5) -> dict:
+async def search(query: str, limit: int = 5, material_filter: str | None = None) -> dict:
     """クエリテキストで類似検索し、LLMで回答を生成する。"""
     query_vector = await embedding.embed_text(query)
     query_filter = await extract_filters(query)
+
+    # 明示的なmaterialパラメータがある場合、フィルタに追加/上書き
+    if material_filter:
+        material_cond = FieldCondition(key="material", match=MatchValue(value=material_filter))
+        if query_filter and query_filter.must:
+            # 既存のmaterial条件を除去して上書き
+            query_filter.must = [c for c in query_filter.must if getattr(c, 'key', None) != 'material']
+            query_filter.must.append(material_cond)
+        else:
+            query_filter = Filter(must=[material_cond])
     logger.info("Extracted filter: %s", query_filter)
-    results = qdrant.search(query_vector, limit=limit, query_filter=query_filter)
+    results = await qdrant.search(query_vector, limit=limit, query_filter=query_filter)
 
     # フィルタ付きで結果が少ない場合、フィルタなしで再検索
     if len(results) < 2 and query_filter is not None:
         logger.info("Too few results with filter, retrying without filter")
-        results = qdrant.search(query_vector, limit=limit)
+        results = await qdrant.search(query_vector, limit=limit)
 
     if not results:
         return {
@@ -38,23 +50,21 @@ async def import_records(records: list[EstimateRecord]) -> ImportResult:
     """レコードリストをEmbedding化してQdrantにupsertする。"""
     result = ImportResult()
 
-    # 既存IDチェック
-    for record in records:
-        if qdrant.point_exists(record.id):
-            result.updated_count += 1
-        else:
-            result.new_count += 1
+    # 既存IDチェック（一括取得でN+1を回避）
+    ids = [r.id for r in records]
+    existing_ids = await qdrant.get_existing_ids(ids)
+    result.updated_count = len(existing_ids)
+    result.new_count = len(ids) - result.updated_count
 
     # Embedding生成
     texts = [r.to_embedding_text() for r in records]
     vectors = await embedding.embed_texts(texts)
 
     # Qdrant upsert
-    ids = [r.id for r in records]
     payloads = [r.to_payload() for r in records]
-    qdrant.upsert_points(ids, vectors, payloads)
+    await qdrant.upsert_points(ids, vectors, payloads)
 
-    result.total_count = qdrant.count()
+    result.total_count = await qdrant.count()
     return result
 
 
