@@ -9,13 +9,28 @@
 - **Gemini API** — Embedding生成 + LLM回答生成
 - **Mattermost** — ユーザーインターフェース (Webhook連携)
 
-## セットアップ
+## 前提条件
 
-### 1. 環境変数
+- Docker / Docker Compose がインストール済み
+- Caddy（リバースプロキシ）が `localproxy` ネットワークで稼働中
+- 独自ドメインのDNS設定が可能
+- Google Gemini APIキーを取得済み
+- Mattermostが稼働中（Webhook設定が可能）
+
+## VPSへのデプロイ手順
+
+### 1. リポジトリを配置
+
+```bash
+git clone <repo-url> ~/estimate-rag
+cd ~/estimate-rag
+```
+
+### 2. 環境変数を設定
 
 ```bash
 cp .env.example .env
-# .env を編集して各種キー・URLを設定
+nano .env
 ```
 
 | 変数 | 説明 |
@@ -26,18 +41,59 @@ cp .env.example .env
 | `MATTERMOST_INCOMING_WEBHOOK_URL` | Incoming Webhook URL (回答投稿用) |
 | `MATTERMOST_OUTGOING_WEBHOOK_TOKEN` | Outgoing Webhook検証トークン |
 
-### 2. 起動
+### 3. DNSにAレコードを追加
+
+使用するサブドメイン（例: `estimate.example.com`）をVPSのIPアドレスに向ける。
+
+### 4. Caddyfileにエントリを追加
+
+Caddyの設定ファイルに以下を追記：
+
+```
+estimate.example.com {
+    reverse_proxy rag-api:8000
+}
+```
+
+Caddyを再読み込み：
 
 ```bash
+docker exec <caddy-container> caddy reload --config /etc/caddy/Caddyfile
+```
+
+### 5. 起動
+
+```bash
+cd ~/estimate-rag
 docker compose up -d --build
 ```
 
-### 3. Dockerネットワーク
-
-既存の `caddy_net` ネットワークに接続する構成です。ネットワークがない場合は事前に作成してください:
+### 6. 動作確認
 
 ```bash
-docker network create caddy_net
+curl https://estimate.example.com/api/v1/health
+```
+
+正常時のレスポンス：
+
+```json
+{"status": "healthy", "qdrant": "connected", "gemini": "available"}
+```
+
+### 7. Mattermost側の設定
+
+1. **Outgoing Webhook** を作成し、コールバックURLを設定：
+   `https://estimate.example.com/api/v1/webhook/mattermost`
+2. トリガーワード: `@見積`
+3. 取得したトークンを `.env` の `MATTERMOST_OUTGOING_WEBHOOK_TOKEN` に設定
+4. コンテナを再起動: `docker compose restart rag-api`
+
+## Dockerネットワーク
+
+Caddyと同じ `localproxy` 外部ネットワークを使用します。ネットワークがない場合は事前に作成してください：
+
+```bash
+docker network create localproxy
 ```
 
 ## 使い方

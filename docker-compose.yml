@@ -14,7 +14,7 @@ services:
     depends_on:
       - qdrant
     networks:
-      - caddy_net
+      - localproxy
     restart: unless-stopped
 
   qdrant:
@@ -22,13 +22,13 @@ services:
     expose:
       - "6333"
     networks:
-      - caddy_net
+      - localproxy
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
 
 networks:
-  caddy_net:
+  localproxy:
     external: true
 
 volumes:
