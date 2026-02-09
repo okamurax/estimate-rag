@@ -8,45 +8,30 @@
 
 ### 全体構成
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  Docker Network: caddy_net                               │
-│                                                          │
-│  ┌──────────────┐  Outgoing Webhook (Docker内部通信)     │
-│  │  Mattermost  │──POST http://rag-api:8000──→┐          │
-│  │  (既存)      │←─POST /hooks/xxx (Incoming)─┐│         │
-│  └──────────────┘                             ││         │
-│                                               ││         │
-│  ┌────────────────────────────────────┐       ││         │
-│  │  rag-api コンテナ                  │←──────┘│         │
-│  │  uvicorn + FastAPI (Python 3.12)   │────────┘         │
-│  │  - Webhook受信 (検索)              │──→ Gemini API    │
-│  │  - CSV取り込み (Mattermost経由)    │    (外部HTTPS)   │
-│  │  - RAG検索・レスポンス生成         │                  │
-│  │  ポート: 8000                      │                  │
-│  └────────┬───────────────────────────┘                  │
-│           │ qdrant:6333 (サービス名で接続)               │
-│  ┌────────▼────────────────┐                             │
-│  │  qdrant コンテナ        │                             │
-│  │  Qdrant (公式イメージ)  │                             │
-│  │  - ベクトル格納・検索   │                             │
-│  │  - Dashboard (管理UI)   │                             │
-│  │  ポート: 6333           │                             │
-│  └─────────────────────────┘                             │
-│                                                          │
-│  ┌──────────────┐                                        │
-│  │  Caddy (既存) │←── HTTPS (443) ── 外部アクセス        │
-│  │  - SSL終端    │                                       │
-│  │  - Qdrant Dashboard用 Basic認証                       │
-│  └──────────────┘                                        │
-│                                                          │
-│  Jitsi, MeshCentral 等 (既存/予定)                       │
-└──────────────────────────────────────────────────────────┘
+すべてのコンテナは Docker Network (`localproxy`) 上で動作する。
 
-※ Mattermost ↔ rag-api: Docker内部通信（Caddy経由不要）
-※ Qdrant Dashboard: Caddy経由でBasic認証付き外部公開
-※ rag-api → Gemini API: 外部HTTPS通信
-```
+#### コンポーネント
+
+| コンポーネント | 説明 | ポート |
+|---|---|---|
+| **Mattermost** (既存) | ユーザーインターフェース | - |
+| **rag-api** | uvicorn + FastAPI (Python 3.12) | 8000 |
+| **Qdrant** | ベクトル格納・検索、Dashboard (管理UI) | 6333 |
+| **Caddy** (既存) | SSL終端、リバースプロキシ | 443 |
+
+#### 通信フロー
+
+| 経路 | 方向 | 内容 |
+|---|---|---|
+| Mattermost → rag-api | Outgoing Webhook | `POST http://rag-api:8000` (Docker内部通信) |
+| rag-api → Mattermost | Incoming Webhook | `POST /hooks/xxx` (回答投稿) |
+| rag-api → Qdrant | サービス名接続 | `qdrant:6333` (Docker内部通信) |
+| rag-api → Gemini API | 外部HTTPS | Embedding生成・LLM回答生成 |
+| 外部 → Caddy | HTTPS (443) | 外部アクセスの入口 |
+
+> - Mattermost ↔ rag-api はDocker内部通信（Caddy経由不要）
+> - Qdrant DashboardはCaddy経由でBasic認証付き外部公開
+> - Jitsi, MeshCentral 等は既存/予定
 
 ### 役割分担
 
